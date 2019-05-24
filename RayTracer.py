@@ -221,6 +221,7 @@ class Image(Element):
                             hist_points[:,1], np.ones((average_bins))/average_bins, mode='valid')
         hist_points[0:clip-1,1] = hist_points[clip,1]
         hist_points[-clip,1] = hist_points[-clip -1,1]
+        hist_points[:,1] = hist_points[:,1]/np.sum(a = hist_points, axis = 1) # Normalize
         ax_image.plot(hist_points[:, 0], hist_points[:, 1])
 
 
@@ -232,18 +233,29 @@ fig_image, ax_image = plt.subplots()
 def main():
     """2D ray-tracing in simple optical system"""
 
+    """**Start USER CODE**"""
     # Create system built of optical elements
-    lens_start = LensTransition(25, 0, 1/5.48)
-    lens_end = LensTransition(28, -50, 5.48)
-    aperture = Aperture(30, -2, 2)
+    lens_thickness = 2.2
+    lens_start_distance = 30
+    lens_start = LensTransition(lens_start_distance, 0, 1/5.48)
+    lens_end = LensTransition(lens_start_distance + lens_thickness, -120.2, 5.48)
+    
+    #aperture_start = Aperture(33, -1.4, 1.4)
+    #aperture_end = Aperture(34, -1.4, 1.4)
+    
     """Bed extents"""
+    bed_center_distance = 343.9
     bed_len = 165
-    bed_theta = 19.74
-    bed_x1, bed_y1 = 316 - math.cos(bed_theta)*bed_len/2, -bed_len/2*math.cos(bed_theta) 
-    bed_x2, bed_y2 = 316 + math.cos(bed_theta)*bed_len/2, bed_len/2*math.cos(bed_theta)
+    bed_theta = math.radians(90 - 19.83)
+    bed_x1, bed_y1 = bed_center_distance - math.cos(bed_theta)*bed_len/2, -bed_len/2*math.sin(bed_theta) 
+    bed_x2, bed_y2 = bed_center_distance + math.cos(bed_theta)*bed_len/2, bed_len/2*math.sin(bed_theta)
     """"""
     bed  = Image(bed_x1, bed_y1, bed_x2, bed_y2)
-    System = [lens_start, lens_end, aperture, bed]
+    
+    #System = [bed]
+    System = [lens_start, lens_end, bed]
+    #System = [lens_start, lens_end, aperture_start,aperture_end, bed]
+    """**END USER CODE**"""
     
     # Load intensity vs theta data
     with open('AngularIntensity.json') as f:
@@ -265,6 +277,7 @@ def main():
         rayDensity = get_intensity(theta + .5, angularIntensity)
         num_rays = int(rayDensity * 30)
         if num_rays > 0:
+            print(theta)
             spacing = 1.0 / num_rays
             for ray in range(num_rays):
                 initial_thetas.append(math.radians(theta + ray * spacing))
