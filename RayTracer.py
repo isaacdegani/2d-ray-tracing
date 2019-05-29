@@ -125,18 +125,17 @@ class LensTransition(Element):
             else:
                 new_theta = math.asin(sin_theta2)
         else:
-            if self.r > 0:
-                angle_of_incidence = initial_theta + math.asin(y/self.r)
-            else:
-                angle_of_incidence = math.asin(y/self.r) - initial_theta
+            normal_theta = math.asin(y/-self.r)
+            angle_of_incidence = normal_theta - initial_theta
 
             sin_theta2 = self.n * math.sin(angle_of_incidence)  # Snell's law
             if sin_theta2 > 1 or sin_theta2 < - 1:  # total internal reflection
                 self.block_current_path = True
-                delta_theta = 0  # arbitrary, path is blocked
+                new_theta = 0  # arbitrary, path is blocked
             else:
-                delta_theta = math.asin(self.n * math.sin(angle_of_incidence)) - angle_of_incidence
-            new_theta = initial_theta + delta_theta
+                angle_of_exit = math.asin(sin_theta2)
+                delta_theta = angle_of_exit - angle_of_incidence
+                new_theta = initial_theta - delta_theta
 
         return new_theta
 
@@ -235,10 +234,11 @@ def main():
 
     """**Start USER CODE**"""
     # Create system built of optical elements
-    lens_thickness = 2.2
-    lens_start_distance = 30
-    lens_start = LensTransition(lens_start_distance, 0, 1/5.48)
-    lens_end = LensTransition(lens_start_distance + lens_thickness, -120.2, 5.48)
+    lens_thickness = 2.5
+    lens_start_distance = 29.1
+    lens_start = LensTransition(lens_start_distance, 0, 1/4.01)
+    lens_end = LensTransition(lens_start_distance + lens_thickness, -45.1, 4.01/1)
+
     
     #aperture_start = Aperture(33, -1.4, 1.4)
     #aperture_end = Aperture(34, -1.4, 1.4)
@@ -277,7 +277,6 @@ def main():
         rayDensity = get_intensity(theta + .5, angularIntensity)
         num_rays = int(rayDensity * 30)
         if num_rays > 0:
-            print(theta)
             spacing = 1.0 / num_rays
             for ray in range(num_rays):
                 initial_thetas.append(math.radians(theta + ray * spacing))
