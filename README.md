@@ -1,5 +1,5 @@
 # RayTracing
-Code for ray tracing through simple optical systems
+Code for ray tracing through simple optical systems.
 Requires Scipy.
 
 AngularIntensity.json decribes the source beam.
