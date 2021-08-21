@@ -10,9 +10,10 @@ from abc import ABC, abstractmethod
 
 class Path:
     """ Collection of Rays"""
-    def __init__(self, x, y, theta):
+    def __init__(self, x, y, theta, color='blue'):
         self.rays = [[x, y, theta]]
         self.curr_ray = 0
+        self.color = color
         self.blocked = False
         self.image = False  # Set to true if the path makes it to the image plane
 
@@ -29,7 +30,7 @@ class Path:
         # Convert to numpy array
         self.rays = np.array(self.rays)
         # Slice and plot
-        ax_sim.plot(self.rays[:, 0], self.rays[:, 1], color='blue', zorder=0)
+        ax_sim.plot(self.rays[:, 0], self.rays[:, 1], color=self.color, zorder=0)
 
 
 class Source(ABC):
@@ -85,7 +86,7 @@ class PointSourceFromFile(Source):
 
 class LambertianPointSource(Source):
     """A set of rays originating from a single point with Lambertian intensity"""
-    def __init__(self, x, y, normal_theta, min_theta, max_theta, resolution):
+    def __init__(self, x, y, normal_theta, min_theta, max_theta, resolution, color='blue'):
         super().__init__()
         self.paths = []
 
@@ -109,7 +110,7 @@ class LambertianPointSource(Source):
 
         # Create ray objects
         for theta in initial_thetas:
-            self.paths.append(Path(x, y, theta))
+            self.paths.append(Path(x, y, theta, color))
 
     def get_paths(self):
         return self.paths
@@ -195,7 +196,6 @@ class LensTransition(Element):
         else:
             # Plot an arc to represent curved lens transition
             start_angle = math.degrees(math.asin(diameter/np.abs(radius_of_curvature)))/2
-            print(start_angle)
             arc = patches.Arc((x_intersect + radius_of_curvature, 0), radius_of_curvature*2, radius_of_curvature*2,
                               theta1=180-start_angle, theta2=180+start_angle, linewidth=5, fill=False, zorder=2, color='red')
             ax_sim.add_patch(arc)
@@ -333,11 +333,12 @@ class Image(Element):
             curr_bin+=1
             curr_location = curr_bin * bin_length
         hist_points = np.array(hist_points)
-        average_bins = 5 # Should be odd
+        average_bins = 5 # Should be odd so average is symmetric around center bin
         clip = int((average_bins - 1)/2)
         hist_points[clip:-clip,1] = np.convolve(
                             hist_points[:,1], np.ones((average_bins))/average_bins, mode='valid')
-        hist_points[0:clip-1,1] = hist_points[clip,1]
+        hist_points[0:clip-1,1] = hist_points[clip-1,1]
+        print(hist_points)
         hist_points[-clip,1] = hist_points[-clip -1,1]
         hist_points[:,1] = hist_points[:,1]/np.sum(a = hist_points, axis = 1) # Normalize
         ax_image.plot(hist_points[:, 0], hist_points[:, 1])
@@ -368,8 +369,11 @@ class System:
 
 # Set up plotting
 fig_intensity, ax_intensity = plt.subplots()
+ax_intensity.set_title('Source Intensity vs. Theta')
 fig_sim, ax_sim = plt.subplots()
+ax_sim.set_title('Optical System')
 fig_image, ax_image = plt.subplots()
+ax_image.set_title('Image Intensity vs. Y location')
 
 
 def main():
@@ -377,9 +381,11 @@ def main():
 
     """**Start USER CODE**"""
     # Create system built of optical elements
-    point_source1 = LambertianPointSource(0, 0, 0, math.radians(-89), math.radians(89), math.radians(1))
-    #point_source2 = PointSourceFromFile(0, 10, 'AngularIntensity.json')
-    compound_source = CompoundSource([point_source1])
+    point_source1 = LambertianPointSource(0, 0, 0, math.radians(-89), math.radians(89), math.radians(1), color='blue')
+    point_source2 = LambertianPointSource(0, 5, 0, math.radians(-89), math.radians(89), math.radians(1), color='green')
+
+    #point_source3 = PointSourceFromFile(0, 10, 'AngularIntensity.json')
+    compound_source = CompoundSource([point_source1, point_source2])
 
     lens_thickness = 2.5
     lens_diameter = 25
@@ -390,7 +396,7 @@ def main():
     aperture_start = Aperture(33, -1.4, 1.4)
     aperture_end = Aperture(34, -1.4, 1.4)
 
-    """Bed extents"""
+    """Image extents"""
     bed_center_distance = 343.9
     bed_len = 165
     bed_theta = math.radians(90 - 19.83)
