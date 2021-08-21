@@ -10,10 +10,11 @@ from abc import ABC, abstractmethod
 
 class Path:
     """ Collection of Rays"""
-    def __init__(self, x, y, theta, color='blue'):
+    def __init__(self, x, y, theta, visible=True, color='blue'):
         self.rays = [[x, y, theta]]
         self.curr_ray = 0
         self.color = color
+        self.visible = visible
         self.blocked = False
         self.image = False  # Set to true if the path makes it to the image plane
 
@@ -27,10 +28,11 @@ class Path:
             self.curr_ray += 1
 
     def plot(self):
-        # Convert to numpy array
-        self.rays = np.array(self.rays)
-        # Slice and plot
-        ax_sim.plot(self.rays[:, 0], self.rays[:, 1], color=self.color, zorder=0)
+        if self.visible:
+            # Convert to numpy array
+            self.rays = np.array(self.rays)
+            # Slice and plot
+            ax_sim.plot(self.rays[:, 0], self.rays[:, 1], color=self.color, zorder=0)
 
 
 class Source(ABC):
@@ -78,7 +80,7 @@ class PointSourceFromFile(Source):
 
         # Create ray objects
         for theta in initial_thetas:
-            self.paths.append(Path(x, y, theta))
+                self.paths.append(Path(x, y, theta))
 
     def get_paths(self):
         return self.paths
@@ -96,21 +98,23 @@ class LambertianPointSource(Source):
         initial_thetas = []
         for i, theta in enumerate(theta_bins):
             rayDensity = math.cos(theta + normal_theta)
-            num_rays = int(rayDensity * 20)  # second number is intensity resolution
+            num_rays = int(rayDensity * 500)  # second number is intensity resolution
             if num_rays > 0:
                 spacing = resolution / num_rays
                 for ray in range(num_rays):
                     initial_thetas.append(theta + ray * spacing)
             theta_ray_density[i] = num_rays
 
-
         # Plot Intensity vs. theta
         ax_intensity.plot(theta_ray_density, theta_bins)
 
-
         # Create ray objects
-        for theta in initial_thetas:
-            self.paths.append(Path(x, y, theta, color))
+        for i, theta in enumerate(initial_thetas):
+            # Show fewer rays for visibility
+            if i % 1000 == 0:
+                self.paths.append(Path(x, y, theta, color=color))
+            else:
+                self.paths.append(Path(x, y, theta, visible=False, color=color))
 
     def get_paths(self):
         return self.paths
@@ -338,7 +342,6 @@ class Image(Element):
         hist_points[clip:-clip,1] = np.convolve(
                             hist_points[:,1], np.ones((average_bins))/average_bins, mode='valid')
         hist_points[0:clip-1,1] = hist_points[clip-1,1]
-        print(hist_points)
         hist_points[-clip,1] = hist_points[-clip -1,1]
         hist_points[:,1] = hist_points[:,1]/np.sum(a = hist_points, axis = 1) # Normalize
         ax_image.plot(hist_points[:, 0], hist_points[:, 1])
@@ -364,6 +367,8 @@ class System:
         self.image.plot_image_intensity(paths)
 
         # Show the generated simulation
+        x_scale = np.abs(ax_sim.get_xlim()[1] - ax_sim.get_xlim()[0])
+        ax_sim.set_ylim(-x_scale/2, x_scale/2)  # Equal aspect ratio, limit y range
         plt.show()
 
 
@@ -381,31 +386,33 @@ def main():
 
     """**Start USER CODE**"""
     # Create system built of optical elements
-    point_source1 = LambertianPointSource(0, 0, 0, math.radians(-89), math.radians(89), math.radians(1), color='blue')
-    point_source2 = LambertianPointSource(0, 5, 0, math.radians(-89), math.radians(89), math.radians(1), color='green')
+
+    # Place two lambertian point sources at the edges of the bed to represent the "object" to be imaged
+    sensor_center_distance = 343.9
+    bed_len = 165
+    bed_theta = math.radians(19.83)
+    bed_normal_theta = math.pi/2 - bed_theta
+    bed_x1, bed_y1 = -math.cos(bed_normal_theta)*bed_len/2, bed_len/2*math.sin(bed_normal_theta)
+    bed_x2, bed_y2 = math.cos(bed_normal_theta)*bed_len/2, -bed_len/2*math.sin(bed_normal_theta)
+    point_source1 = LambertianPointSource(bed_x1, bed_y1, -bed_theta, math.radians(-60)+bed_theta, math.radians(60)+bed_theta, math.radians(0.1), color='blue')
+    point_source2 = LambertianPointSource(bed_x2, bed_y2, -bed_theta, math.radians(-60)+bed_theta, math.radians(60)+bed_theta, math.radians(0.1), color='green')
 
     #point_source3 = PointSourceFromFile(0, 10, 'AngularIntensity.json')
     compound_source = CompoundSource([point_source1, point_source2])
 
     lens_thickness = 2.5
     lens_diameter = 25
-    lens_start_distance = 29.1
+    lens_start_distance = sensor_center_distance - 29.1
     lens_start = LensTransition(lens_start_distance, lens_diameter, 0, 1/4.01)
     lens_end = LensTransition(lens_start_distance + lens_thickness, lens_diameter, -45.1, 4.01/1)
 
-    aperture_start = Aperture(33, -1.4, 1.4)
-    aperture_end = Aperture(34, -1.4, 1.4)
+    aperture_start = Aperture(sensor_center_distance - 34, -1.4, 1.4)
+    aperture_end = Aperture(sensor_center_distance - 33, -1.4, 1.4)
 
     """Image extents"""
-    bed_center_distance = 343.9
-    bed_len = 165
-    bed_theta = math.radians(90 - 19.83)
-    bed_x1, bed_y1 = bed_center_distance - math.cos(bed_theta)*bed_len/2, -bed_len/2*math.sin(bed_theta)
-    bed_x2, bed_y2 = bed_center_distance + math.cos(bed_theta)*bed_len/2, bed_len/2*math.sin(bed_theta)
+    sensor = Image(sensor_center_distance, -20, sensor_center_distance, 20)
 
-    bed = Image(bed_x1, bed_y1, bed_x2, bed_y2)
-
-    system = System(compound_source, [lens_start, lens_end, aperture_start, aperture_end], bed)
+    system = System(compound_source, [lens_start, lens_end, aperture_start, aperture_end], sensor)
     system.run()
     """**END USER CODE**"""
 

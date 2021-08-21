@@ -1,5 +1,5 @@
 # RayTracing
-Code for ray tracing through simple (2D) optical systems.
+Code for ray tracing through simple (2D, Linear) optical systems.
 Requires Matplotlib and Scipy.
 
 AngularIntensity.json decribes the angular intensity of a source beam.
