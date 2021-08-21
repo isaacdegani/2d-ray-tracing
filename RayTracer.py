@@ -97,7 +97,7 @@ class LambertianPointSource(Source):
         theta_ray_density = np.ndarray(len(theta_bins))
         initial_thetas = []
         for i, theta in enumerate(theta_bins):
-            rayDensity = math.cos(theta + normal_theta)
+            rayDensity = math.cos(theta - normal_theta)
             num_rays = int(rayDensity * 500)  # second number is intensity resolution
             if num_rays > 0:
                 spacing = resolution / num_rays
@@ -356,8 +356,10 @@ class System:
         self.elements.append(image)  # Images are just elements anyway
 
     def run(self):
+        print("Generating source rays...")
         paths = self.sources.get_paths()  # all paths start with the source rays
         # Calculate each ray propagating through the system
+        print("Propagating rays through system...")
         for path in paths:
             for element in self.elements:
                 path.propagate_to(element)
@@ -369,6 +371,7 @@ class System:
         # Show the generated simulation
         x_scale = np.abs(ax_sim.get_xlim()[1] - ax_sim.get_xlim()[0])
         ax_sim.set_ylim(-x_scale/2, x_scale/2)  # Equal aspect ratio, limit y range
+        print("Generating plots...")
         plt.show()
 
 
@@ -383,35 +386,49 @@ ax_image.set_title('Image Intensity vs. Y location')
 
 def main():
     """2D ray-tracing in simple optical system"""
+    print("Constructing optical system...")
 
     """**Start USER CODE**"""
     # Create system built of optical elements
 
-    # Place two lambertian point sources at the edges of the bed to represent the "object" to be imaged
-    sensor_center_distance = 343.9
+    """Place two lambertian point sources at the edges of the bed and two sources 15mm interior to check resolution"""
+    sensor_center_distance = 343.9  # distance from center of bed to sensor
+
     bed_len = 165
     bed_theta = math.radians(19.83)
-    bed_normal_theta = math.pi/2 - bed_theta
-    bed_x1, bed_y1 = -math.cos(bed_normal_theta)*bed_len/2, bed_len/2*math.sin(bed_normal_theta)
-    bed_x2, bed_y2 = math.cos(bed_normal_theta)*bed_len/2, -bed_len/2*math.sin(bed_normal_theta)
-    point_source1 = LambertianPointSource(bed_x1, bed_y1, -bed_theta, math.radians(-60)+bed_theta, math.radians(60)+bed_theta, math.radians(0.1), color='blue')
-    point_source2 = LambertianPointSource(bed_x2, bed_y2, -bed_theta, math.radians(-60)+bed_theta, math.radians(60)+bed_theta, math.radians(0.1), color='green')
 
-    #point_source3 = PointSourceFromFile(0, 10, 'AngularIntensity.json')
-    compound_source = CompoundSource([point_source1, point_source2])
+    beam_width = math.radians(80/2)
+    # First extent
+    bed_x1, bed_y1 = -math.cos(math.pi/4 + bed_theta)*bed_len/2, bed_len/2*math.sin(math.pi/4 + bed_theta)
+    point_source1 = LambertianPointSource(bed_x1, bed_y1, bed_theta, -beam_width+bed_theta, beam_width+bed_theta, math.radians(0.1), color='blue')
+    # Second extent
+    bed_x2, bed_y2 = math.cos(math.pi/4 + bed_theta)*bed_len/2, -bed_len/2*math.sin(math.pi/4 + bed_theta)
+    point_source2 = LambertianPointSource(bed_x2, bed_y2, bed_theta, -beam_width+bed_theta, beam_width+bed_theta, math.radians(0.1), color='green')
+    # First interior point
+    bed_x3, bed_y3 = -math.cos(math.pi/4 + bed_theta)*(bed_len - 15)/2, (bed_len - 15)/2*math.sin(math.pi/4 + bed_theta)
+    point_source3 = LambertianPointSource(bed_x3, bed_y3, bed_theta, -beam_width+bed_theta, beam_width+bed_theta, math.radians(0.1), color='orange')
+    # Second interior point
+    bed_x4, bed_y4 = math.cos(math.pi/4 + bed_theta)*(bed_len - 15)/2, -(bed_len - 15)/2*math.sin(math.pi/4 + bed_theta)
+    point_source4 = LambertianPointSource(bed_x4, bed_y4, bed_theta, -beam_width+bed_theta, beam_width+bed_theta, math.radians(0.1), color='purple')
 
+    # Combine the sources into one element
+    compound_source = CompoundSource([point_source1, point_source2, point_source3, point_source4])
+
+    # Define the lens geometry
     lens_thickness = 2.5
-    lens_diameter = 25
+    lens_diameter = 10
+    n_germainum = 4.01
     lens_start_distance = sensor_center_distance - 29.1
-    lens_start = LensTransition(lens_start_distance, lens_diameter, 0, 1/4.01)
-    lens_end = LensTransition(lens_start_distance + lens_thickness, lens_diameter, -45.1, 4.01/1)
+    lens_start = LensTransition(lens_start_distance, lens_diameter, 0, 1/n_germainum)
+    lens_end = LensTransition(lens_start_distance + lens_thickness, lens_diameter, -45.1, n_germainum/1)
 
+    # Two (thin) apertures to approximate a thick thru hole
     aperture_start = Aperture(sensor_center_distance - 34, -1.4, 1.4)
     aperture_end = Aperture(sensor_center_distance - 33, -1.4, 1.4)
 
-    """Image extents"""
-    sensor = Image(sensor_center_distance, -20, sensor_center_distance, 20)
+    sensor = Image(sensor_center_distance, -20, sensor_center_distance, 20)  # Sensor perpendicular to lens/apertures
 
+    # Simulate!
     system = System(compound_source, [lens_start, lens_end, aperture_start, aperture_end], sensor)
     system.run()
     """**END USER CODE**"""
