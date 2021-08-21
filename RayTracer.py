@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import patches
 import json
 import math
 from scipy import optimize
@@ -28,10 +29,7 @@ class Path:
         # Convert to numpy array
         self.rays = np.array(self.rays)
         # Slice and plot
-        ax_sim.plot(self.rays[:, 0], self.rays[:, 1])
-
-        # show elements
-        ax_sim.plot(self.rays[:, 0], self.rays[:, 1], 'ro')
+        ax_sim.plot(self.rays[:, 0], self.rays[:, 1], color='blue', zorder=0)
 
 
 class Source(ABC):
@@ -44,25 +42,15 @@ class Source(ABC):
         """returns all the paths created by a source"""
 
 
-class PointSource(Source):
-    """A set of rays originating from a single point"""
-    def __init__(self, x, y, angular_i='lambertian', num_rays=15, path_to_angular_i=None):
+class PointSourceFromFile(Source):
+    """A set of rays originating from a single point. Intensity from JSON"""
+    def __init__(self, x, y, file_path):
         super().__init__()
-        self.angular_i = angular_i
-        self.path_to_angular_i = path_to_angular_i
-        self.num_rays = num_rays
+        self.file_path = file_path
         self.paths = []
 
-        # TODO: make this a case switch with new type
-        if angular_i == 'lambertian':
-            angularIntensity = [[]]
-        elif angular_i == 'from_path':  # Load intensity vs theta data
-            with open(self.path_to_angular_i) as f:
-                angularIntensity = json.load(f)
-        elif angular_i == 'iso':
-            angularIntensity = [[]]
-        else:
-            print('What gives?')
+        with open(self.file_path) as f:
+            angularIntensity = json.load(f)
 
         def get_intensity(theta, angularIntensity):
             min_angle = angularIntensity[0][0]
@@ -70,9 +58,11 @@ class PointSource(Source):
             increment = max_angle / ((len(angularIntensity) - 1) / 2)
             return angularIntensity[int(theta / increment + min_angle / increment)][1]
 
+        """
         # Plot Intensity vs. theta
         intensity_numpy = np.array(angularIntensity)
         ax_intensity.plot(intensity_numpy[:, 0], intensity_numpy[:, 1])
+        """
 
         # Define initial ray-thetas in density derived from angular intensity
         theta_bins = range(-15, 15, 1)
@@ -84,6 +74,38 @@ class PointSource(Source):
                 spacing = 1.0 / num_rays
                 for ray in range(num_rays):
                     initial_thetas.append(math.radians(theta + ray * spacing))
+
+        # Create ray objects
+        for theta in initial_thetas:
+            self.paths.append(Path(x, y, theta))
+
+    def get_paths(self):
+        return self.paths
+
+
+class LambertianPointSource(Source):
+    """A set of rays originating from a single point with Lambertian intensity"""
+    def __init__(self, x, y, normal_theta, min_theta, max_theta, resolution):
+        super().__init__()
+        self.paths = []
+
+        # Define initial ray-thetas in density derived from angular intensity of lambertian emmiter
+        theta_bins = np.arange(min_theta, max_theta, step=resolution)
+        theta_ray_density = np.ndarray(len(theta_bins))
+        initial_thetas = []
+        for i, theta in enumerate(theta_bins):
+            rayDensity = math.cos(theta + normal_theta)
+            num_rays = int(rayDensity * 20)  # second number is intensity resolution
+            if num_rays > 0:
+                spacing = resolution / num_rays
+                for ray in range(num_rays):
+                    initial_thetas.append(theta + ray * spacing)
+            theta_ray_density[i] = num_rays
+
+
+        # Plot Intensity vs. theta
+        ax_intensity.plot(theta_ray_density, theta_bins)
+
 
         # Create ray objects
         for theta in initial_thetas:
@@ -133,7 +155,8 @@ class Aperture(Element):
         self.center = x
         self.min_y = min_y
         self.max_y = max_y
-        ax_sim.plot([x, x], [min_y, max_y], 'bo')  # plot endpoints
+
+        ax_sim.plot([x, x], [min_y, max_y], linewidth=5, color='red')  # plots aperture as line
 
     def get_intersect(self, ray):
         x = self.center
@@ -151,7 +174,7 @@ class Aperture(Element):
 
 class LensTransition(Element):
     """Spherical or flat lens surface"""
-    def __init__(self, x_intersect, radius_of_curvature, index_ratio):
+    def __init__(self, x_intersect, diameter, radius_of_curvature, index_ratio):
         """x is defined as the point where the transition surface intersects the x axis
         radius_of_curvature > 0 for convex (center of curvature after the interface)
         index_ratio is n1/n2
@@ -160,29 +183,45 @@ class LensTransition(Element):
         self.x_intersect = x_intersect
         self.r = radius_of_curvature
         self.n = index_ratio
+        self.diameter = diameter
         self.block_current_path = False
 
         self.is_flat = False
         if self.r == 0:
             self.is_flat = True
+            # Plot a line to represent flat lens transition
+            ax_sim.plot([x_intersect, x_intersect], [-diameter/2, diameter/2], linewidth=5, color='red', zorder=2)  # plots diameter as line
+            ax_sim.plot([x_intersect, x_intersect], [-diameter/2, diameter/2], 'ro', zorder=2)  # plot opening points for clarity
+        else:
+            # Plot an arc to represent curved lens transition
+            start_angle = math.degrees(math.asin(diameter/np.abs(radius_of_curvature)))/2
+            print(start_angle)
+            arc = patches.Arc((x_intersect + radius_of_curvature, 0), radius_of_curvature*2, radius_of_curvature*2,
+                              theta1=180-start_angle, theta2=180+start_angle, linewidth=5, fill=False, zorder=2, color='red')
+            ax_sim.add_patch(arc)
 
     def get_intersect(self, ray):
         tan_theta = math.tan(ray[2])
-        if not self.is_flat:
-            if self.r > 0:
-                brentq_bracket = [self.x_intersect, self.x_intersect + self.r/4]
-            else:
-                brentq_bracket = [self.x_intersect + self.r/4, self.x_intersect]
+        if np.abs(ray[1]) < self.diameter/2:  # Check that ray actually instersects lens
 
-            x_equation = lambda x: (x - self.x_intersect - self.r)**2 + (
-                    (x - ray[0])*tan_theta + ray[1])**2 - self.r**2
-            sol = optimize.root_scalar(
-                x_equation, bracket=brentq_bracket, method='brentq')
-            x = sol.root
-            y = (self.x_intersect - ray[0]) * tan_theta + ray[1]
+            if not self.is_flat:  # Flat transistions only require simple snell's law application
+                if self.r > 0:  # Check positive/negative curvature
+                    brentq_bracket = [self.x_intersect, self.x_intersect + self.r/4]
+                else:
+                    brentq_bracket = [self.x_intersect + self.r/4, self.x_intersect]
+
+                x_equation = lambda x: (x - self.x_intersect - self.r)**2 + (
+                        (x - ray[0])*tan_theta + ray[1])**2 - self.r**2
+                sol = optimize.root_scalar(
+                    x_equation, bracket=brentq_bracket, method='brentq')
+                x = sol.root
+                y = (self.x_intersect - ray[0]) * tan_theta + ray[1]
+            else:
+                x = self.x_intersect
+                y = (self.x_intersect - ray[0]) * tan_theta + ray[1]
         else:
-            x = self.x_intersect
-            y = (self.x_intersect - ray[0]) * tan_theta + ray[1]
+            x = ray[0]
+            y = ray[1]
 
         return x, y
 
@@ -193,26 +232,31 @@ class LensTransition(Element):
             self.block_current_path = False
 
     def update_direction(self, x, y, initial_theta):
-        if self.is_flat:
-            angle_of_incidence = initial_theta
-            sin_theta2 =self.n * math.sin(angle_of_incidence)  # Snell's law
-            if sin_theta2 > 1 or sin_theta2 < - 1:  # total internal reflection
-                self.block_current_path = True
-                new_theta = 0  # Path is blocked so this is arbitrary
-            else:
-                new_theta = math.asin(sin_theta2)
-        else:
-            normal_theta = math.asin(y/-self.r)
-            angle_of_incidence = normal_theta - initial_theta
+        if np.abs(y) < self.diameter/2:  # Check that ray actually instersects lens
 
-            sin_theta2 = self.n * math.sin(angle_of_incidence)  # Snell's law
-            if sin_theta2 > 1 or sin_theta2 < - 1:  # total internal reflection
-                self.block_current_path = True
-                new_theta = 0  # arbitrary, path is blocked
+            if self.is_flat:
+                angle_of_incidence = initial_theta
+                sin_theta2 =self.n * math.sin(angle_of_incidence)  # Snell's law
+                if sin_theta2 > 1 or sin_theta2 < - 1:  # total internal reflection
+                    self.block_current_path = True
+                    new_theta = 0  # Path is blocked so this is arbitrary
+                else:
+                    new_theta = math.asin(sin_theta2)
             else:
-                angle_of_exit = math.asin(sin_theta2)
-                delta_theta = angle_of_exit - angle_of_incidence
-                new_theta = initial_theta - delta_theta
+                normal_theta = math.asin(y/-self.r)
+                angle_of_incidence = normal_theta - initial_theta
+
+                sin_theta2 = self.n * math.sin(angle_of_incidence)  # Snell's law
+                if sin_theta2 > 1 or sin_theta2 < - 1:  # total internal reflection
+                    self.block_current_path = True
+                    new_theta = 0  # arbitrary, path is blocked
+                else:
+                    angle_of_exit = math.asin(sin_theta2)
+                    delta_theta = angle_of_exit - angle_of_incidence
+                    new_theta = initial_theta - delta_theta
+
+        else:
+            new_theta = initial_theta
 
         return new_theta
 
@@ -225,8 +269,7 @@ class Image(Element):
         self.x2 = x2
         self.y1 = y1
         self.y2 = y2
-        ax_sim.plot([x1, x2], [y1, y2])
-        ax_sim.plot([x1, x2], [y1, y2], 'bo')  # plot endpoints
+        ax_sim.plot([x1, x2], [y1, y2], linewidth=5, color='red')
 
     def get_intersect(self, ray):
         tan_theta = math.tan(ray[2])
@@ -334,14 +377,15 @@ def main():
 
     """**Start USER CODE**"""
     # Create system built of optical elements
-    point_source1 = PointSource(0, 0, angular_i='from_path', path_to_angular_i='AngularIntensity.json')
-    point_source2 = PointSource(0, 10, angular_i='from_path', path_to_angular_i='AngularIntensity.json')
-    compound_source = CompoundSource([point_source1, point_source2])
+    point_source1 = LambertianPointSource(0, 0, 0, math.radians(-89), math.radians(89), math.radians(1))
+    #point_source2 = PointSourceFromFile(0, 10, 'AngularIntensity.json')
+    compound_source = CompoundSource([point_source1])
 
     lens_thickness = 2.5
+    lens_diameter = 25
     lens_start_distance = 29.1
-    lens_start = LensTransition(lens_start_distance, 0, 1/4.01)
-    lens_end = LensTransition(lens_start_distance + lens_thickness, -45.1, 4.01/1)
+    lens_start = LensTransition(lens_start_distance, lens_diameter, 0, 1/4.01)
+    lens_end = LensTransition(lens_start_distance + lens_thickness, lens_diameter, -45.1, 4.01/1)
 
     aperture_start = Aperture(33, -1.4, 1.4)
     aperture_end = Aperture(34, -1.4, 1.4)
