@@ -1,12 +1,12 @@
 # RayTracing
-Code for ray tracing through simple (2D, Linear) optical systems.
-Requires Matplotlib and Scipy.
+Module for tracing light rays through simple (2D, Linear) optical systems.
 
-AngularIntensity.json decribes the angular intensity of a source beam.
+An optical system is built up of "sources," "elements," and an "image."
+Many different sources and elements are available and can be customized
+and placed with user parameters.
 
-An optical system is built up of classes that inherent from the abstract "Element" Class.
-The system is simulated as lines depicting rays in a matplotlib plot.
-The beam originates as a point source from the origin and ends at an 
-imaging element. Intensity graphs of the source beams and image are generated.
+The system is simulated as rays propagating through a matplotlib plot.
+Rays originate from sources, interact with elements, and terminate
+at an image. Intensity graphs of the source beams and image are generated.
 
-User definable code is all in the main function of RayTracer.py
+See EXAMPLE.py for usage
